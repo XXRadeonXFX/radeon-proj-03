@@ -1,0 +1,348 @@
+trigger: none
+
+name: adf-end-to-end-deployment
+
+variables:
+  environment: 'develop'
+
+resources:
+  repositories:
+    - repository: pnp-pipelines-automation
+      type: git
+      name: pnp-pipelines-automation
+      ref: refs/heads/ard-ADF
+
+    - repository: pnp-deploy-repo-automation
+      type: git
+      name: pnp-deploy-repo-automation
+      ref: refs/heads/tst-adf-branch
+
+    - repository: facade-template-tf-module-adf_pnp
+      type: git
+      name: facade-template-tf-module-adf_pnp
+      ref: refs/heads/automation
+
+pool:
+  name: vmss-dm-pp-prd-we-1
+    
+parameters:
+  - name: repository_name
+    type: string
+    default: '9p9p9p-automation-poc-adf-dm-pp-dev'
+
+  - name: project_name
+    type: string
+    default: 'Data Management'
+    
+  - name: project_abbv
+    type: string
+    default: 'poc-x1'    
+
+  - name: dev_init_flag
+    type: string
+    default: 'true'
+
+  - name: prd_flag
+    type: string
+    default: 'false'    
+
+  - name: branch_name
+    type: string
+    values:
+    - main
+    - adf_publish    
+
+  - name: build_pipeline
+    type: string
+    default: 'true'
+
+  - name: deploy_pipeline
+    type: string
+    default: 'true'
+
+  - name: deploy_pipeline_name
+    type: string
+    default: '9p9p9p-automation-poc-adf-dm-pp-dev"'    
+
+  - name: enable_deployment_trigger
+    type: boolean
+    default: 'true'    
+
+  - name: location
+    type: string
+    default: 'westeurope'
+
+  - name: key_vault_prefix
+    type: string
+    default: 'kv-dm-sd'    
+
+  - name: resource_group_prefix
+    type: string
+    default: 'rg-dm-datafactory'
+
+  - name: factory_name
+    type: string
+    default: 'adf-dm-poc-x1-dev-we-1'
+
+  - name: subscription_prefix
+    type: string
+    default: 'tp-dm-source-data'
+
+  - name: vnet_resource_group_prefix
+    type: string
+    default: 'rg-source-data-network'
+
+  - name: vnet_prefix
+    type: string
+    default: 'vnet-source-data-network'
+
+  - name: ir_selection_list
+    type: string
+    default: "TADMSELUPOOL1,TADMSELUPOOL2,TADMSELUPOOL3"
+    displayName: "Available Integration Runtimes (comma separated)"
+
+  - name: force_ir_change
+    type: string
+    default: false
+    displayName: "Force IR change on existing ADFs (WARNING: May impact running pipelines)"
+
+  - name: auto_select_ir
+    type: string
+    default: true
+    displayName: "Enable automatic IR selection based on capacity"
+
+  - name: deployment_pipeline_yml
+    type: string
+    default: 'ci/azure-pipelines.yml'
+
+stages:
+# - stage: CheckRepoExistence
+#   displayName: 'Check if ADF Git Repo Exists'
+#   jobs:
+#     - job: CheckRepo
+#       displayName: 'Check Repository Existence'
+#       steps:
+#         - checkout: none
+
+#         - task: PowerShell@2
+#           displayName: 'Check if Repository Exists'
+#           inputs:
+#             targetType: 'inline'
+#             script: |
+#               # Install Azure CLI DevOps extension
+#               az extension add --name azure-devops --only-show-errors
+              
+#               # Set up authentication
+#               $env:AZURE_DEVOPS_EXT_PAT = "$(System.AccessToken)"
+#               az devops configure --defaults organization=https://dev.azure.com/tetrapak-tpps project="${{ parameters.project_name }}"
+              
+#               Write-Host "Checking if repository '${{ parameters.repository_name }}' exists in project '${{ parameters.project_name }}'..."
+              
+#               try {
+#                 $repo = az repos show --repository "${{ parameters.repository_name }}" --query "name" -o tsv 2>$null
+#                 if ($repo) {
+#                   Write-Host "Repository '${{ parameters.repository_name }}' already exists!"
+#                   Write-Host "##vso[task.setvariable variable=repoExists;isOutput=true]true"
+#                 } else {
+#                   Write-Host "Repository '${{ parameters.repository_name }}' does not exist. Will create it."
+#                   Write-Host "##vso[task.setvariable variable=repoExists;isOutput=true]false"
+#                 }
+#               } catch {
+#                 Write-Host "Repository '${{ parameters.repository_name }}' does not exist. Will create it."
+#                 Write-Host "##vso[task.setvariable variable=repoExists;isOutput=true]false"
+#               }
+#           name: 'checkRepoStep'
+
+# - stage: CreateADFRepo
+#   displayName: 'Create ADF Git Repository'
+#   dependsOn: CheckRepoExistence
+#   condition: and(succeeded(), eq(dependencies.CheckRepoExistence.outputs['CheckRepo.checkRepoStep.repoExists'], 'false'))
+#   jobs:
+#     - job: GenerateRepo
+#       displayName: 'Generate Repository'
+#       steps:
+#       - checkout: self
+#       - checkout: pnp-deploy-repo-automation
+#         persistCredentials: true
+
+#       - task: Bash@3
+#         displayName: 'Generate terraform code'
+#         inputs:
+#           targetType: 'filePath'
+#           filePath: './pnp-pipelines-automation/scripts/azdo-repository/generate-terraform.sh'
+#           arguments: '"${{ parameters.repository_name }}" "${{ parameters.project_name }}" "${{ parameters.build_pipeline }}" "${{ parameters.deploy_pipeline }}"'
+#           workingDirectory: '$(Build.SourcesDirectory)/pnp-deploy-repo-automation'
+
+#       - task: Bash@3
+#         displayName: 'Commit and push changes'
+#         inputs:
+#           targetType: 'filePath'
+#           filePath: './pnp-pipelines-automation/scripts/common/commit-and-push.sh'
+#           arguments: '${{ parameters.repository_name }} ${{ parameters.project_name }}'
+#           workingDirectory: '$(Build.SourcesDirectory)/pnp-deploy-repo-automation'
+
+#       - script: |
+#           python3 ./pnp-pipelines-automation/scripts/common/create-pull-request.py \
+#             --repository_id "pnp-deploy-repo-automation" \
+#             --source_branch "${{ parameters.repository_name }}"
+#         displayName: "Create Pull Request"
+#         env:
+#           ENCODED_PAT: $(ENCODED_PAT)
+
+- stage: DeployRepo
+  displayName: 'Deploy/Destroy Repo'
+  # dependsOn: 
+  #   - CheckRepoExistence
+  # condition: and(succeeded(), eq(dependencies.CheckRepoExistence.outputs['CheckRepo.checkRepoStep.repoExists'], 'false'))
+
+  jobs:
+    - job: Deploy
+      pool:
+        name: vmss-dm-pp-prd-we-1
+      container:
+        image: crdmppbasewe1.azurecr.io/facade-template-tf-module-env_pnp:main
+        endpoint: crdmppbasewe1
+        options: --user 0:0
+
+      steps:
+      - checkout: self
+      - checkout: pnp-deploy-repo-automation
+        persistCredentials: true
+        fetchDepth: 2
+
+      - task: Bash@3
+        displayName: 'Login and fetch token'
+        inputs:
+          targetType: 'filePath'
+          filePath: './pnp-pipelines-automation/scripts/common/get-token.sh'
+          workingDirectory: '$(Build.SourcesDirectory)/pnp-deploy-repo-automation'
+
+      - task: Bash@3
+        displayName: "Detect changed folders"
+        inputs:
+          targetType: 'filePath'
+          filePath: './pnp-pipelines-automation/scripts/common/detect-changed-folders.sh'
+          workingDirectory: '$(Build.SourcesDirectory)/pnp-deploy-repo-automation'
+
+      - task: Bash@3
+        displayName: "Apply in changed folders"
+        inputs:
+          targetType: 'filePath'
+          filePath: './pnp-pipelines-automation/scripts/common/apply-in-changed-folders.sh'
+          workingDirectory: '$(Build.SourcesDirectory)/pnp-deploy-repo-automation'
+        env:
+            ENCODED_PAT: $(ENCODED_PAT)
+            AZURE_DEVOPS_EXT_PAT: $(PAT)
+            GIT_TERMINAL_PROMPT: 0
+
+# - stage: WaitForApproval
+#   displayName: "Manual Approval before Deploy"
+#   dependsOn: CreateADFRepo
+#   jobs:
+#     - job: Approval
+#       pool: server   # required, this makes it run on the server not an agent
+#       steps:
+#         - task: ManualValidation@0
+#           timeoutInMinutes: 60
+#           inputs:
+#             instructions: 'Please review the generated repo and approve to continue.'
+#             onTimeout: 'reject'      
+
+#####################################################################################  
+- stage: DeployADFpublish
+  displayName: 'Deploy ADF tst/prd Pipeline'
+  # dependsOn: 
+  #   - CheckRepoExistence
+  #   - CreateADFRepo
+  #   - WaitForApproval
+  # condition: |
+  #   and(
+  #     not(failed()),
+  #     or(
+  #       and(succeeded('CheckRepoExistence'), eq(dependencies.CheckRepoExistence.outputs['CheckRepo.checkRepoStep.repoExists'], 'true')),
+  #       and(succeeded('CreateADFRepo'), eq(dependencies.CheckRepoExistence.outputs['CheckRepo.checkRepoStep.repoExists'], 'false'))
+  #     )
+  #   )
+
+  jobs:
+    - job: PushToAdfPublish
+      displayName: 'Generating adf_publish branch files'
+      steps:
+      - checkout: self
+      - checkout: pnp-pipelines-automation
+        persistCredentials: true
+      
+      - script: |
+          git clone "https://$(System.AccessToken)@dev.azure.com/tetrapak-tpps/Data%20Management/_git/${{ parameters.repository_name }}"
+        displayName: 'Clone dynamic repo'
+
+      - template: /scripts/adf-pipelines/templates/generate-and-commit.yml
+        parameters:
+          repository_name: ${{ parameters.repository_name }}
+          project_name:    ${{ parameters.project_name }}
+          build_pipeline:  ${{ parameters.build_pipeline }}
+          deploy_pipeline: ${{ parameters.deploy_pipeline }}
+          branch_name:     "adf_publish"
+          factory_name:    ${{ parameters.factory_name }}
+          project_abbv:    ${{ parameters.project_abbv }}
+          dev_init_flag:   "true"
+          prd_flag:        ${{ parameters.prd_flag }}
+          key_vault_prefix: ${{ parameters.key_vault_prefix }}
+          resource_group_prefix: ${{ parameters.resource_group_prefix }}
+          subscription_prefix: ${{ parameters.subscription_prefix }}
+          vnet_resource_group_prefix: ${{ parameters.vnet_resource_group_prefix }}
+          vnet_prefix:                ${{ parameters.vnet_prefix }}
+          deployment_pipeline_yml:    ${{ parameters.deployment_pipeline_yml }}              
+          ir_selection_list:  ${{ parameters.ir_selection_list }}     
+          auto_select_ir:     ${{ parameters.auto_select_ir }}
+          force_ir_change:    ${{ parameters.force_ir_change }}
+          working_dir:     '$(Build.SourcesDirectory)/${{ parameters.repository_name }}'
+
+- stage: DeployADF
+  displayName: 'Deploy ADF dev Pipeline'
+  jobs:
+
+    - job: PushToMain 
+      displayName: 'Generating all ADF deployment config Files'
+      steps:
+      - checkout: self
+      - checkout: pnp-pipelines-automation
+        persistCredentials: true
+      
+      - script: |
+          git clone "https://$(System.AccessToken)@dev.azure.com/tetrapak-tpps/Data%20Management/_git/${{ parameters.repository_name }}"
+        displayName: 'Clone dynamic repo'
+
+      - template: /scripts/adf-pipelines/templates/generate-and-commit.yml
+        parameters:
+          repository_name: ${{ parameters.repository_name }}
+          project_name:    ${{ parameters.project_name }}
+          build_pipeline:  ${{ parameters.build_pipeline }}
+          deploy_pipeline: ${{ parameters.deploy_pipeline }}
+          branch_name:     "main"
+          factory_name:    ${{ parameters.factory_name }}
+          project_abbv:    ${{ parameters.project_abbv }}
+          dev_init_flag:   ${{ parameters.dev_init_flag }}
+          prd_flag:        ${{ parameters.prd_flag }}
+          key_vault_prefix: ${{ parameters.key_vault_prefix }}
+          resource_group_prefix: ${{ parameters.resource_group_prefix }}
+          subscription_prefix: ${{ parameters.subscription_prefix }}
+          vnet_resource_group_prefix: ${{ parameters.vnet_resource_group_prefix }}
+          vnet_prefix:                ${{ parameters.vnet_prefix }}
+          deployment_pipeline_yml:    ${{ parameters.deployment_pipeline_yml }}                        
+          ir_selection_list:  ${{ parameters.ir_selection_list }}     
+          auto_select_ir:     ${{ parameters.auto_select_ir }}
+          force_ir_change:    ${{ parameters.force_ir_change }}
+          working_dir:     '$(Build.SourcesDirectory)/${{ parameters.repository_name }}'          
+#####################################################################################  
+
+
+      # - script: |
+      #     python3 "$(Build.SourcesDirectory)/pnp-pipelines-automation/scripts/adf-pipelines/create-pull-request.py" \
+      #       --repository_id "${{ parameters.repository_name }}" \
+      #       --source_branch "${{ parameters.repository_name }}" \
+      #       --project_name "${{ parameters.project_name }}"
+      #   displayName: "Run Python Script to Create PR"
+      #   workingDirectory: '$(Build.SourcesDirectory)/${{ parameters.repository_name }}'
+      #   env:
+      #     ENCODED_PAT: $(ENCODED_PAT)

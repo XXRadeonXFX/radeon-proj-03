@@ -1,0 +1,82 @@
+# Generate CI file and commit/push changes yaml script
+steps:
+
+##################################| GENERATING ci/pipeline.yml FILE |################################## 
+- task: Bash@3
+  name: GenerateTerraform
+  displayName: 'Generating terraform code for ${{ parameters.branch_name }} Branch'
+  inputs:
+    targetType: 'filePath'
+    filePath: './pnp-pipelines-automation/scripts/adf-pipelines/generate-ci-file.sh'
+    arguments: >
+      -r "${{ parameters.repository_name }}"
+      -p "${{ parameters.project_abbv }}"
+      -s "dm"
+      -d "${{ parameters.dev_init_flag }}"
+      -P "${{ parameters.prd_flag }}"
+      -o  "${{ parameters.deployment_pipeline_yml }}"
+      --key-vault-prefix   "${{ parameters.key_vault_prefix }}"
+      --rg-prefix          "${{ parameters.resource_group_prefix }}"
+      --sub-prefix         "${{ parameters.subscription_prefix }}"
+      --vnet-rg-prefix     "${{ parameters.vnet_resource_group_prefix }}"
+      --vnet-prefix        "${{ parameters.vnet_prefix }}"
+      --ir-selection-list  "${{ parameters.ir_selection_list }}"     
+      --auto-select-ir     "${{ parameters.auto_select_ir }}"
+      --force-ir-change    "${{ parameters.force_ir_change }}"
+    workingDirectory: '${{ parameters.working_dir }}'
+##################################| GENERATING ci/pipeline.yml FILE |################################## 
+
+##################################| GENERATING managedVirtualNetwork-json.sh & default.json FILE |################################## 
+
+- task: Bash@3
+  name: GenerateManagedVNetJson
+  displayName: 'Generate Managed Virtual Network JSON for ${{ parameters.branch_name }} Branch'
+  condition: eq('${{ parameters.branch_name }}', 'main')
+  inputs:
+    targetType: 'filePath'
+    filePath: './pnp-pipelines-automation/scripts/adf-pipelines/generate-managedVirtualNetwork-json.sh'
+    arguments: >
+      -o "${{ parameters.working_dir }}"
+    workingDirectory: '${{ parameters.working_dir }}'
+##################################| GENERATING managedVirtualNetwork-json.sh & default.json FILE |################################## 
+
+
+
+
+
+
+##################################| GENERATING linkedService.json FILE |################################## 
+- task: Bash@3
+  name: GenerateLinkedServiceJson
+  displayName: 'Generate Linked Service JSON for ${{ parameters.branch_name }} Branch'
+  condition: eq('${{ parameters.branch_name }}', 'main')
+  inputs:
+    targetType: 'filePath'
+    filePath: './pnp-pipelines-automation/scripts/adf-pipelines/generate-linkedService-json.sh'
+    arguments: >
+      -k "kv-dm-${{ parameters.key_vault_prefix }}-dev-we-1"
+      -o "${{ parameters.working_dir }}"
+    workingDirectory: '${{ parameters.working_dir }}'
+##################################| GENERATING linkedService.json FILE |################################## 
+
+##################################| GENERATING publish-config.json FILE |##################################
+- task: Bash@3
+  name: GeneratePublishConfig
+  displayName: 'Generate publish_config.json for ${{ parameters.branch_name }} Branch'
+  condition: eq('${{ parameters.branch_name }}', 'main')
+  inputs:
+    targetType: 'filePath'
+    filePath: './pnp-pipelines-automation/scripts/adf-pipelines/generate-publish-config-json.sh'
+    arguments: >
+      -o "${{ parameters.working_dir }}"
+    workingDirectory: '${{ parameters.working_dir }}' 
+##################################| GENERATING publish-config.json FILE |################################## 
+
+
+- task: Bash@3
+  displayName: 'Commit and push changes on ${{ parameters.branch_name }} Branch'
+  inputs:
+    targetType: 'filePath'
+    filePath: './pnp-pipelines-automation/scripts/adf-pipelines/commit-and-push.sh'
+    arguments: "${{ parameters.repository_name }} '${{ parameters.project_name }}' ${{ parameters.branch_name }}"
+    workingDirectory: '${{ parameters.working_dir }}'
