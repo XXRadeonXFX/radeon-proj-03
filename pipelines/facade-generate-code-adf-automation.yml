@@ -15,7 +15,7 @@ resources:
     - repository: pnp-deploy-repo-automation
       type: git
       name: pnp-deploy-repo-automation
-      ref: refs/heads/tst-adf-branch
+      ref: ${{ format('refs/heads/{0}', parameters.deploy_repo_branch) }}
 
     - repository: facade-template-tf-module-adf_pnp
       type: git
@@ -36,7 +36,12 @@ parameters:
     
   - name: project_abbv
     type: string
-    default: 'poc-x1'    
+    default: 'poc-x1'
+    
+  - name: deploy_repo_branch
+    type: string
+    default: 'main'
+    displayName: 'Deploy repo branch (use repository name for new repos)'    
 
   - name: dev_init_flag
     type: string
@@ -116,85 +121,149 @@ parameters:
     default: 'ci/azure-pipelines.yml'
 
 stages:
-# - stage: CheckRepoExistence
-#   displayName: 'Check if ADF Git Repo Exists'
-#   jobs:
-#     - job: CheckRepo
-#       displayName: 'Check Repository Existence'
-#       steps:
-#         - checkout: none
+- stage: CheckRepoExistence
+  displayName: 'Check if ADF Git Repo Exists'
+  jobs:
+    - job: CheckRepo
+      displayName: 'Check Repository Existence'
+      steps:
+        - checkout: none
 
-#         - task: PowerShell@2
-#           displayName: 'Check if Repository Exists'
-#           inputs:
-#             targetType: 'inline'
-#             script: |
-#               # Install Azure CLI DevOps extension
-#               az extension add --name azure-devops --only-show-errors
+        - task: PowerShell@2
+          displayName: 'Check if Repository Exists'
+          inputs:
+            targetType: 'inline'
+            script: |
+              # Install Azure CLI DevOps extension
+              az extension add --name azure-devops --only-show-errors
               
-#               # Set up authentication
-#               $env:AZURE_DEVOPS_EXT_PAT = "$(System.AccessToken)"
-#               az devops configure --defaults organization=https://dev.azure.com/tetrapak-tpps project="${{ parameters.project_name }}"
+              # Set up authentication
+              $env:AZURE_DEVOPS_EXT_PAT = "$(System.AccessToken)"
+              az devops configure --defaults organization=https://dev.azure.com/tetrapak-tpps project="${{ parameters.project_name }}"
               
-#               Write-Host "Checking if repository '${{ parameters.repository_name }}' exists in project '${{ parameters.project_name }}'..."
+              Write-Host "Checking if repository '${{ parameters.repository_name }}' exists in project '${{ parameters.project_name }}'..."
               
-#               try {
-#                 $repo = az repos show --repository "${{ parameters.repository_name }}" --query "name" -o tsv 2>$null
-#                 if ($repo) {
-#                   Write-Host "Repository '${{ parameters.repository_name }}' already exists!"
-#                   Write-Host "##vso[task.setvariable variable=repoExists;isOutput=true]true"
-#                 } else {
-#                   Write-Host "Repository '${{ parameters.repository_name }}' does not exist. Will create it."
-#                   Write-Host "##vso[task.setvariable variable=repoExists;isOutput=true]false"
-#                 }
-#               } catch {
-#                 Write-Host "Repository '${{ parameters.repository_name }}' does not exist. Will create it."
-#                 Write-Host "##vso[task.setvariable variable=repoExists;isOutput=true]false"
-#               }
-#           name: 'checkRepoStep'
+              try {
+                $repo = az repos show --repository "${{ parameters.repository_name }}" --query "name" -o tsv 2>$null
+                if ($repo) {
+                  Write-Host "Repository '${{ parameters.repository_name }}' already exists!"
+                  Write-Host "##vso[task.setvariable variable=repoExists;isOutput=true]true"
+                } else {
+                  Write-Host "Repository '${{ parameters.repository_name }}' does not exist. Will create it."
+                  Write-Host "##vso[task.setvariable variable=repoExists;isOutput=true]false"
+                }
+              } catch {
+                Write-Host "Repository '${{ parameters.repository_name }}' does not exist. Will create it."
+                Write-Host "##vso[task.setvariable variable=repoExists;isOutput=true]false"
+              }
+          name: 'checkRepoStep'
 
-# - stage: CreateADFRepo
-#   displayName: 'Create ADF Git Repository'
-#   dependsOn: CheckRepoExistence
-#   condition: and(succeeded(), eq(dependencies.CheckRepoExistence.outputs['CheckRepo.checkRepoStep.repoExists'], 'false'))
-#   jobs:
-#     - job: GenerateRepo
-#       displayName: 'Generate Repository'
-#       steps:
-#       - checkout: self
-#       - checkout: pnp-deploy-repo-automation
-#         persistCredentials: true
+- stage: CreateADFRepo
+  displayName: 'Create ADF Git Repository'
+  dependsOn: CheckRepoExistence
+  condition: eq(dependencies.CheckRepoExistence.outputs['CheckRepo.checkRepoStep.repoExists'], 'false')
+  jobs:
+    - job: GenerateRepo
+      displayName: 'Generate Repository'
+      steps:
+      - checkout: self
+      - checkout: pnp-deploy-repo-automation
+        persistCredentials: true
 
-#       - task: Bash@3
-#         displayName: 'Generate terraform code'
-#         inputs:
-#           targetType: 'filePath'
-#           filePath: './pnp-pipelines-automation/scripts/azdo-repository/generate-terraform.sh'
-#           arguments: '"${{ parameters.repository_name }}" "${{ parameters.project_name }}" "${{ parameters.build_pipeline }}" "${{ parameters.deploy_pipeline }}"'
-#           workingDirectory: '$(Build.SourcesDirectory)/pnp-deploy-repo-automation'
+      - task: Bash@3
+        displayName: 'Create and checkout dynamic branch'
+        inputs:
+          targetType: 'inline'
+          script: |
+            cd $(Build.SourcesDirectory)/pnp-deploy-repo-automation
+            
+            BRANCH_NAME="${{ parameters.repository_name }}"
+            echo "Target branch name: $BRANCH_NAME"
+            
+            # Configure git
+            git config user.email "pipeline@tetrapak.com"
+            git config user.name "Azure Pipeline"
+            
+            # Fetch all remote branches
+            git fetch origin
+            
+            # Check if branch already exists remotely
+            if git ls-remote --heads origin "$BRANCH_NAME" | grep -q "$BRANCH_NAME"; then
+              echo "Branch $BRANCH_NAME exists remotely, checking out..."
+              git checkout -b "$BRANCH_NAME" origin/"$BRANCH_NAME"
+            else
+              echo "Creating new branch $BRANCH_NAME from main..."
+              git checkout -b "$BRANCH_NAME"
+              
+              # Push the new branch to remote so it exists
+              git push -u origin "$BRANCH_NAME"
+              echo "New branch $BRANCH_NAME created and pushed to remote"
+            fi
+            
+            echo "Currently on branch: $(git branch --show-current)"
 
-#       - task: Bash@3
-#         displayName: 'Commit and push changes'
-#         inputs:
-#           targetType: 'filePath'
-#           filePath: './pnp-pipelines-automation/scripts/common/commit-and-push.sh'
-#           arguments: '${{ parameters.repository_name }} ${{ parameters.project_name }}'
-#           workingDirectory: '$(Build.SourcesDirectory)/pnp-deploy-repo-automation'
+      - task: Bash@3
+        displayName: 'Generate terraform code'
+        inputs:
+          targetType: 'filePath'
+          filePath: './pnp-pipelines-automation/scripts/azdo-repository/generate-terraform.sh'
+          arguments: '"${{ parameters.repository_name }}" "${{ parameters.project_name }}" "${{ parameters.build_pipeline }}" "${{ parameters.deploy_pipeline }}"'
+          workingDirectory: '$(Build.SourcesDirectory)/pnp-deploy-repo-automation'
 
-#       - script: |
-#           python3 ./pnp-pipelines-automation/scripts/common/create-pull-request.py \
-#             --repository_id "pnp-deploy-repo-automation" \
-#             --source_branch "${{ parameters.repository_name }}"
-#         displayName: "Create Pull Request"
-#         env:
-#           ENCODED_PAT: $(ENCODED_PAT)
+      - task: Bash@3
+        displayName: 'Commit and push changes'
+        inputs:
+          targetType: 'filePath'
+          filePath: './pnp-pipelines-automation/scripts/common/commit-and-push.sh'
+          arguments: '${{ parameters.repository_name }} ${{ parameters.project_name }}'
+          workingDirectory: '$(Build.SourcesDirectory)/pnp-deploy-repo-automation'
+
+      - script: |
+          python3 ./pnp-pipelines-automation/scripts/common/create-pull-request.py \
+            --repository_id "pnp-deploy-repo-automation" \
+            --source_branch "${{ parameters.repository_name }}"
+        displayName: "Create Pull Request"
+        env:
+          ENCODED_PAT: $(ENCODED_PAT)
+
+- stage: WaitForApproval
+  displayName: "Manual Approval before Deploy"
+  dependsOn: 
+    - CheckRepoExistence
+    - CreateADFRepo
+  condition: and(succeeded(), eq(dependencies.CheckRepoExistence.outputs['CheckRepo.checkRepoStep.repoExists'], 'false'))
+  jobs:
+    - job: ApprovalGate
+      displayName: "Review Repository Creation - Choose Action"
+      pool: server
+      timeoutInMinutes: 1440
+      steps:
+        - task: ManualValidation@0
+          displayName: 'Choose: APPROVE to Deploy ADF | REJECT to Skip'
+          inputs:
+            instructions: |
+              Repository '${{ parameters.repository_name }}' has been created successfully!
+              
+              What would you like to do next?
+              
+              APPROVE: Continue with ADF pipeline deployment
+              REJECT: Skip ADF deployment (keep repository only)
+              
+              Repository Details:
+              - Name: ${{ parameters.repository_name }}
+              - Project: ${{ parameters.project_name }}
+              - Factory: ${{ parameters.factory_name }}
+              
+              Make your choice by clicking one of the buttons below.
+            onTimeout: 'reject'
 
 - stage: DeployRepo
   displayName: 'Deploy/Destroy Repo'
-  # dependsOn: 
-  #   - CheckRepoExistence
-  # condition: and(succeeded(), eq(dependencies.CheckRepoExistence.outputs['CheckRepo.checkRepoStep.repoExists'], 'false'))
-
+  dependsOn: 
+    - CheckRepoExistence
+    - CreateADFRepo
+    - WaitForApproval
+  condition: and(eq(dependencies.CheckRepoExistence.outputs['CheckRepo.checkRepoStep.repoExists'], 'false'), eq(dependencies.WaitForApproval.result, 'Succeeded'))
   jobs:
     - job: Deploy
       pool:
@@ -209,6 +278,35 @@ stages:
       - checkout: pnp-deploy-repo-automation
         persistCredentials: true
         fetchDepth: 2
+
+      - task: Bash@3
+        displayName: 'Switch to dynamic branch'
+        inputs:
+          targetType: 'inline'
+          script: |
+            cd $(Build.SourcesDirectory)/pnp-deploy-repo-automation
+            
+            BRANCH_NAME="${{ parameters.repository_name }}"
+            echo "Switching to branch: $BRANCH_NAME"
+            
+            # Configure git
+            git config user.email "pipeline@tetrapak.com"
+            git config user.name "Azure Pipeline"
+            
+            # Fetch all remote branches
+            git fetch origin
+            
+            # Switch to the dynamic branch that was created in CreateADFRepo stage
+            if git ls-remote --heads origin "$BRANCH_NAME" | grep -q "$BRANCH_NAME"; then
+              echo "Branch $BRANCH_NAME exists, checking out..."
+              git checkout "$BRANCH_NAME"
+              git pull origin "$BRANCH_NAME"
+            else
+              echo "ERROR: Branch $BRANCH_NAME does not exist! This should not happen."
+              exit 1
+            fi
+            
+            echo "Currently on branch: $(git branch --show-current)"
 
       - task: Bash@3
         displayName: 'Login and fetch token'
@@ -235,35 +333,14 @@ stages:
             AZURE_DEVOPS_EXT_PAT: $(PAT)
             GIT_TERMINAL_PROMPT: 0
 
-# - stage: WaitForApproval
-#   displayName: "Manual Approval before Deploy"
-#   dependsOn: CreateADFRepo
-#   jobs:
-#     - job: Approval
-#       pool: server   # required, this makes it run on the server not an agent
-#       steps:
-#         - task: ManualValidation@0
-#           timeoutInMinutes: 60
-#           inputs:
-#             instructions: 'Please review the generated repo and approve to continue.'
-#             onTimeout: 'reject'      
-
-#####################################################################################  
 - stage: DeployADFpublish
   displayName: 'Deploy ADF tst/prd Pipeline'
-  # dependsOn: 
-  #   - CheckRepoExistence
-  #   - CreateADFRepo
-  #   - WaitForApproval
-  # condition: |
-  #   and(
-  #     not(failed()),
-  #     or(
-  #       and(succeeded('CheckRepoExistence'), eq(dependencies.CheckRepoExistence.outputs['CheckRepo.checkRepoStep.repoExists'], 'true')),
-  #       and(succeeded('CreateADFRepo'), eq(dependencies.CheckRepoExistence.outputs['CheckRepo.checkRepoStep.repoExists'], 'false'))
-  #     )
-  #   )
-
+  dependsOn: 
+    - CheckRepoExistence
+    - CreateADFRepo
+    - WaitForApproval
+    - DeployRepo
+  condition: or(eq(dependencies.CheckRepoExistence.outputs['CheckRepo.checkRepoStep.repoExists'], 'true'), and(eq(dependencies.CheckRepoExistence.outputs['CheckRepo.checkRepoStep.repoExists'], 'false'), eq(dependencies.DeployRepo.result, 'Succeeded')))
   jobs:
     - job: PushToAdfPublish
       displayName: 'Generating adf_publish branch files'
@@ -300,8 +377,13 @@ stages:
 
 - stage: DeployADF
   displayName: 'Deploy ADF dev Pipeline'
+  dependsOn: 
+    - CheckRepoExistence
+    - CreateADFRepo
+    - WaitForApproval
+    - DeployRepo
+  condition: or(eq(dependencies.CheckRepoExistence.outputs['CheckRepo.checkRepoStep.repoExists'], 'true'), and(eq(dependencies.CheckRepoExistence.outputs['CheckRepo.checkRepoStep.repoExists'], 'false'), eq(dependencies.DeployRepo.result, 'Succeeded')))
   jobs:
-
     - job: PushToMain 
       displayName: 'Generating all ADF deployment config Files'
       steps:
@@ -333,16 +415,4 @@ stages:
           ir_selection_list:  ${{ parameters.ir_selection_list }}     
           auto_select_ir:     ${{ parameters.auto_select_ir }}
           force_ir_change:    ${{ parameters.force_ir_change }}
-          working_dir:     '$(Build.SourcesDirectory)/${{ parameters.repository_name }}'          
-#####################################################################################  
-
-
-      # - script: |
-      #     python3 "$(Build.SourcesDirectory)/pnp-pipelines-automation/scripts/adf-pipelines/create-pull-request.py" \
-      #       --repository_id "${{ parameters.repository_name }}" \
-      #       --source_branch "${{ parameters.repository_name }}" \
-      #       --project_name "${{ parameters.project_name }}"
-      #   displayName: "Run Python Script to Create PR"
-      #   workingDirectory: '$(Build.SourcesDirectory)/${{ parameters.repository_name }}'
-      #   env:
-      #     ENCODED_PAT: $(ENCODED_PAT)
+          working_dir:     '$(Build.SourcesDirectory)/${{ parameters.repository_name }}'
