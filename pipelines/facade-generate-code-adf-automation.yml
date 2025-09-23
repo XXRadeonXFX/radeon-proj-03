@@ -116,6 +116,14 @@ parameters:
     default: true
     displayName: "Enable automatic IR selection based on capacity"
 
+  - name: ir_pool_configs
+    type: string
+    default: |
+      TADMSELUPOOL2:adf-dm-ir-prd-we-2:rg-dm-adf-ir-prd-we-1:tp-dm-adf-ir-prd:99,
+      TADMSELUPOOL1:adf-dm-ir-prd-we-1:rg-dm-adf-ir-prd-we-1:tp-dm-adf-ir-prd:99,
+      TADMSELUPOOL3:adf-dm-ir-prd-we-3:rg-dm-adf-ir-prd-we-1:tp-dm-adf-ir-prd:99
+    displayName: "IR Pool Configurations (format: IR_NAME:ADF_NAME:RG:SUB:MAX_CAPACITY)"
+
   - name: deployment_pipeline_yml
     type: string
     default: 'ci/azure-pipelines.yml'
@@ -143,19 +151,30 @@ stages:
               
               Write-Host "Checking if repository '${{ parameters.repository_name }}' exists in project '${{ parameters.project_name }}'..."
               
+              # Initialize the variable
+              $repoExists = $false
+              
               try {
                 $repo = az repos show --repository "${{ parameters.repository_name }}" --query "name" -o tsv 2>$null
-                if ($repo) {
+                if ($LASTEXITCODE -eq 0 -and $repo -and $repo.Trim() -ne "") {
                   Write-Host "Repository '${{ parameters.repository_name }}' already exists!"
-                  Write-Host "##vso[task.setvariable variable=repoExists;isOutput=true]true"
+                  $repoExists = $true
                 } else {
                   Write-Host "Repository '${{ parameters.repository_name }}' does not exist. Will create it."
-                  Write-Host "##vso[task.setvariable variable=repoExists;isOutput=true]false"
+                  $repoExists = $false
                 }
               } catch {
                 Write-Host "Repository '${{ parameters.repository_name }}' does not exist. Will create it."
-                Write-Host "##vso[task.setvariable variable=repoExists;isOutput=true]false"
+                Write-Host "Error details: $($_.Exception.Message)"
+                $repoExists = $false
               }
+              
+              # Always set the output variable and ensure the step succeeds
+              Write-Host "##vso[task.setvariable variable=repoExists;isOutput=true]$repoExists"
+              Write-Host "Repository existence check completed successfully."
+              
+              # Explicitly exit with success code
+              exit 0
           name: 'checkRepoStep'
 
 - stage: CreateADFRepo
@@ -218,13 +237,13 @@ stages:
           arguments: '${{ parameters.repository_name }} ${{ parameters.project_name }}'
           workingDirectory: '$(Build.SourcesDirectory)/pnp-deploy-repo-automation'
 
-      - script: |
-          python3 ./pnp-pipelines-automation/scripts/common/create-pull-request.py \
-            --repository_id "pnp-deploy-repo-automation" \
-            --source_branch "${{ parameters.repository_name }}"
-        displayName: "Create Pull Request"
-        env:
-          ENCODED_PAT: $(ENCODED_PAT)
+      # - script: |
+      #     python3 ./pnp-pipelines-automation/scripts/common/create-pull-request.py \
+      #       --repository_id "pnp-deploy-repo-automation" \
+      #       --source_branch "${{ parameters.repository_name }}"
+      #   displayName: "Create Pull Request"
+      #   env:
+      #     ENCODED_PAT: $(ENCODED_PAT)
 
 - stage: WaitForApproval
   displayName: "Manual Approval before Deploy"
@@ -373,16 +392,18 @@ stages:
           ir_selection_list:  ${{ parameters.ir_selection_list }}     
           auto_select_ir:     ${{ parameters.auto_select_ir }}
           force_ir_change:    ${{ parameters.force_ir_change }}
+          ir_pool_configs:    ${{ parameters.ir_pool_configs }}
           working_dir:     '$(Build.SourcesDirectory)/${{ parameters.repository_name }}'
 
-- stage: DeployADF
+- stage: DeployADFmain
   displayName: 'Deploy ADF dev Pipeline'
   dependsOn: 
     - CheckRepoExistence
     - CreateADFRepo
     - WaitForApproval
     - DeployRepo
-  condition: or(eq(dependencies.CheckRepoExistence.outputs['CheckRepo.checkRepoStep.repoExists'], 'true'), and(eq(dependencies.CheckRepoExistence.outputs['CheckRepo.checkRepoStep.repoExists'], 'false'), eq(dependencies.DeployRepo.result, 'Succeeded')))
+    - DeployADFpublish  # Added this dependency to make it run after DeployADFpublish
+  condition: or(eq(dependencies.CheckRepoExistence.outputs['CheckRepo.checkRepoStep.repoExists'], 'true'), and(eq(dependencies.CheckRepoExistence.outputs['CheckRepo.checkRepoStep.repoExists'], 'false'), and(eq(dependencies.DeployRepo.result, 'Succeeded'), eq(dependencies.DeployADFpublish.result, 'Succeeded'))))
   jobs:
     - job: PushToMain 
       displayName: 'Generating all ADF deployment config Files'
@@ -415,4 +436,5 @@ stages:
           ir_selection_list:  ${{ parameters.ir_selection_list }}     
           auto_select_ir:     ${{ parameters.auto_select_ir }}
           force_ir_change:    ${{ parameters.force_ir_change }}
+          ir_pool_configs:    ${{ parameters.ir_pool_configs }}
           working_dir:     '$(Build.SourcesDirectory)/${{ parameters.repository_name }}'
