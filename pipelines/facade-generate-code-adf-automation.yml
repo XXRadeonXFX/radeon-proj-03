@@ -2,9 +2,6 @@ trigger: none
 
 name: adf-end-to-end-deployment
 
-variables:
-  environment: 'develop'
-
 resources:
   repositories:
     - repository: pnp-pipelines-automation
@@ -105,6 +102,9 @@ parameters:
     type: string
     default: 'ci/azure-pipelines.yml'
 
+
+######################################################{ CHECK REPO EXISTS }######################################################
+
 stages:
 - stage: CheckRepoExistence
   displayName: 'Check if ADF Git Repo Exists'
@@ -153,14 +153,18 @@ stages:
               # Explicitly exit with success code
               exit 0
           name: 'checkRepoStep'
+######################################################{ CHECK REPO EXISTS }######################################################
 
-- stage: CreateADFRepo
-  displayName: 'Create ADF Git Repository'
+
+
+######################################################{ GENERATE REPO TERRAFORM }######################################################
+- stage: CreateADFRepoTerraformCode
+  displayName: 'Generate ADF Git Repository Terraform code'
   dependsOn: CheckRepoExistence
   condition: eq(dependencies.CheckRepoExistence.outputs['CheckRepo.checkRepoStep.repoExists'], 'false')
   jobs:
     - job: GenerateRepo
-      displayName: 'Generate Repository'
+      displayName: 'Generate Repository Code'
       steps:
       - checkout: self
       - checkout: pnp-deploy-repo-automation
@@ -221,12 +225,17 @@ stages:
       #   displayName: "Create Pull Request"
       #   env:
       #     ENCODED_PAT: $(ENCODED_PAT)
+######################################################{ GENERATE REPO TERRAFORM }######################################################
+
+
+
+######################################################{ APPROVAL }######################################################
 
 - stage: WaitForApproval
   displayName: "Manual Approval before Deploy"
   dependsOn: 
     - CheckRepoExistence
-    - CreateADFRepo
+    - CreateADFRepoTerraformCode
   condition: and(succeeded(), eq(dependencies.CheckRepoExistence.outputs['CheckRepo.checkRepoStep.repoExists'], 'false'))
   jobs:
     - job: ApprovalGate
@@ -253,11 +262,16 @@ stages:
               Make your choice by clicking one of the buttons below.
             onTimeout: 'reject'
 
+######################################################{ APPROVAL }######################################################
+
+
+######################################################{ DEPLOY_REPO }######################################################
+
 - stage: DeployRepo
   displayName: 'Deploy/Destroy Repo'
   dependsOn: 
     - CheckRepoExistence
-    - CreateADFRepo
+    - CreateADFRepoTerraformCode
     - WaitForApproval
   condition: and(eq(dependencies.CheckRepoExistence.outputs['CheckRepo.checkRepoStep.repoExists'], 'false'), eq(dependencies.WaitForApproval.result, 'Succeeded'))
   jobs:
@@ -328,12 +342,15 @@ stages:
             ENCODED_PAT: $(ENCODED_PAT)
             AZURE_DEVOPS_EXT_PAT: $(PAT)
             GIT_TERMINAL_PROMPT: 0
-######################################################{ IR CHECKER }#####################################
+######################################################{ DEPLOY_REPO }######################################################
+
+
+######################################################{ IR CHECKER }######################################################
 - stage: ONPremIRCheck
   displayName: 'IR CHECK'
   dependsOn: 
     - CheckRepoExistence
-    - CreateADFRepo
+    - CreateADFRepoTerraformCode
     - WaitForApproval
     - DeployRepo
   condition: or(eq(dependencies.CheckRepoExistence.outputs['CheckRepo.checkRepoStep.repoExists'], 'true'), and(eq(dependencies.CheckRepoExistence.outputs['CheckRepo.checkRepoStep.repoExists'], 'false'), eq(dependencies.DeployRepo.result, 'Succeeded')))
@@ -355,34 +372,25 @@ stages:
           ADF_RESOURCE_GROUP: 'rg-dm-adf-ir-prd-we-1'
           IR_MAX_CAPACITY: '100'
           AZURE_CLIENT_ID: '2b386df0-8e01-4f94-b6bb-3104a8a8f30c'
-      
-      - task: Bash@3
-        name: SetJobOutputs
-        displayName: 'Set Job Output Variables'
-        inputs:
-          targetType: 'inline'
-          script: |
-            echo "=== IR CAPACITY RESULTS ==="
-            echo "SELECTED_ADF: $(CheckIRCapacity.SELECTED_ADF)"
-            echo "SELECTED_IR: $(CheckIRCapacity.SELECTED_IR)"
-            echo "============================"
-            
-            echo "##vso[task.setvariable variable=SELECTED_ADF;isOutput=true]$(CheckIRCapacity.SELECTED_ADF)"
-            echo "##vso[task.setvariable variable=SELECTED_IR;isOutput=true]$(CheckIRCapacity.SELECTED_IR)"######################################################{ IR CHECKER }#####################################
-######################################################{ IR CHECKER }#####################################
+
+######################################################{ IR CHECKER }######################################################
+
+
+######################################################{ ADF-PUBLISH }######################################################
 
 - stage: DeployADFpublish
   displayName: 'Deploy ADF tst/prd Pipeline'
   dependsOn: 
     - CheckRepoExistence
-    - CreateADFRepo
+    - CreateADFRepoTerraformCode
     - WaitForApproval
     - DeployRepo
     - ONPremIRCheck    
   condition: and(eq(dependencies.ONPremIRCheck.result, 'Succeeded'), or(eq(dependencies.CheckRepoExistence.outputs['CheckRepo.checkRepoStep.repoExists'], 'true'), and(eq(dependencies.CheckRepoExistence.outputs['CheckRepo.checkRepoStep.repoExists'], 'false'), eq(dependencies.DeployRepo.result, 'Succeeded'))))
   variables:
-    SELECTED_ADF: $[ dependencies.ONPremIRCheck.outputs['POOLcapacityCHECK.SetJobOutputs.SELECTED_ADF'] ]
-    SELECTED_IR: $[ dependencies.ONPremIRCheck.outputs['POOLcapacityCHECK.SetJobOutputs.SELECTED_IR'] ]
+    SELECTED_ADF: $[ stageDependencies.ONPremIRCheck.POOLcapacityCHECK.outputs['CheckIRCapacity.SELECTED_ADF'] ]
+    SELECTED_IR: $[ stageDependencies.ONPremIRCheck.POOLcapacityCHECK.outputs['CheckIRCapacity.SELECTED_IR'] ]
+
   jobs:
     - job: PushToAdfPublish
       displayName: 'Generating adf_publish branch files'
@@ -394,7 +402,6 @@ stages:
       - script: |
           git clone "https://$(System.AccessToken)@dev.azure.com/tetrapak-tpps/Data%20Management/_git/${{ parameters.repository_name }}"
         displayName: 'Clone dynamic repo'
-
       - template: /scripts/adf-pipelines/templates/generate-and-commit.yml
         parameters:
           repository_name: ${{ parameters.repository_name }}
@@ -411,24 +418,29 @@ stages:
           subscription_prefix: ${{ parameters.subscription_prefix }}
           vnet_resource_group_prefix: ${{ parameters.vnet_resource_group_prefix }}
           vnet_prefix:                ${{ parameters.vnet_prefix }}
-          deployment_pipeline_yml:    ${{ parameters.deployment_pipeline_yml }}              
-          ir_name:       '$(SELECTED_IR)'
-          ir_adf:        '$(SELECTED_ADF)'
+          deployment_pipeline_yml:    ${{ parameters.deployment_pipeline_yml }}
+          ir_name:                    $(SELECTED_IR)
+          ir_adf:                     $(SELECTED_ADF)             
           working_dir:     '$(Build.SourcesDirectory)/${{ parameters.repository_name }}'
+######################################################{ ADF-PUBLISH }######################################################
+
+
+######################################################{ MAIN }######################################################
 
 - stage: DeployADFmain
   displayName: 'Deploy ADF dev Pipeline'
   dependsOn: 
     - CheckRepoExistence
-    - CreateADFRepo
+    - CreateADFRepoTerraformCode
     - WaitForApproval
     - DeployRepo
     - ONPremIRCheck    
     - DeployADFpublish
   condition: and(eq(dependencies.ONPremIRCheck.result, 'Succeeded'), or(eq(dependencies.CheckRepoExistence.outputs['CheckRepo.checkRepoStep.repoExists'], 'true'), and(eq(dependencies.CheckRepoExistence.outputs['CheckRepo.checkRepoStep.repoExists'], 'false'), and(eq(dependencies.DeployRepo.result, 'Succeeded'), eq(dependencies.DeployADFpublish.result, 'Succeeded')))))
   variables:
-    SELECTED_ADF: $[ dependencies.ONPremIRCheck.outputs['POOLcapacityCHECK.SetJobOutputs.SELECTED_ADF'] ]
-    SELECTED_IR: $[ dependencies.ONPremIRCheck.outputs['POOLcapacityCHECK.SetJobOutputs.SELECTED_IR'] ]
+    SELECTED_ADF: $[ stageDependencies.ONPremIRCheck.POOLcapacityCHECK.outputs['CheckIRCapacity.SELECTED_ADF'] ]
+    SELECTED_IR: $[ stageDependencies.ONPremIRCheck.POOLcapacityCHECK.outputs['CheckIRCapacity.SELECTED_IR'] ]
+
   jobs:
     - job: PushToMain 
       displayName: 'Generating all ADF deployment config Files'
@@ -457,7 +469,9 @@ stages:
           subscription_prefix: ${{ parameters.subscription_prefix }}
           vnet_resource_group_prefix: ${{ parameters.vnet_resource_group_prefix }}
           vnet_prefix:                ${{ parameters.vnet_prefix }}
-          deployment_pipeline_yml:    ${{ parameters.deployment_pipeline_yml }}                        
-          ir_name:       '$(SELECTED_IR)'
-          ir_adf:        '$(SELECTED_ADF)'
+          deployment_pipeline_yml:    ${{ parameters.deployment_pipeline_yml }}   
+          ir_name:                    $(SELECTED_IR)
+          ir_adf:                     $(SELECTED_ADF)                     
           working_dir:     '$(Build.SourcesDirectory)/${{ parameters.repository_name }}'
+######################################################{ MAIN }######################################################
+
