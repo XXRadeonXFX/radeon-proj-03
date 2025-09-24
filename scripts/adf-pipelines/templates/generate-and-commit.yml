@@ -20,9 +20,6 @@ steps:
       --sub-prefix         "${{ parameters.subscription_prefix }}"
       --vnet-rg-prefix     "${{ parameters.vnet_resource_group_prefix }}"
       --vnet-prefix        "${{ parameters.vnet_prefix }}"
-      --ir-selection-list  "${{ parameters.ir_selection_list }}"     
-      --auto-select-ir     "${{ parameters.auto_select_ir }}"
-      --force-ir-change    "${{ parameters.force_ir_change }}"
     workingDirectory: '${{ parameters.working_dir }}'
 ##################################| GENERATING ci/pipeline.yml FILE |################################## 
 
@@ -39,25 +36,6 @@ steps:
       -o "${{ parameters.working_dir }}"
     workingDirectory: '${{ parameters.working_dir }}'
 ##################################| GENERATING managedVirtualNetwork-json.sh & default.json FILE |################################## 
-
-
-
-
-
-
-##################################| GENERATING linkedService.json FILE |################################## 
-- task: Bash@3
-  name: GenerateLinkedServiceJson
-  displayName: 'Generate Linked Service JSON for ${{ parameters.branch_name }} Branch'
-  condition: eq('${{ parameters.branch_name }}', 'main')
-  inputs:
-    targetType: 'filePath'
-    filePath: './pnp-pipelines-automation/scripts/adf-pipelines/generate-linkedService-json.sh'
-    arguments: >
-      -k "kv-dm-${{ parameters.key_vault_prefix }}-dev-we-1"
-      -o "${{ parameters.working_dir }}"
-    workingDirectory: '${{ parameters.working_dir }}'
-##################################| GENERATING linkedService.json FILE |################################## 
 
 ##################################| GENERATING publish-config.json FILE |##################################
 - task: Bash@3

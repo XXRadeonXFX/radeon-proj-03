@@ -35,9 +35,6 @@ ADVANCED OPTIONS (optional):
     --ir-adf               IR ADF name (default: adf-{service_abbv}-ir-prd-we-1)
     --ir-rg                IR resource group (default: rg-{service_abbv}-adf-ir-prd-we-1)
     --ir-sub               IR subscription (default: tp-{service_abbv}-adf-ir-prd)
-    --ir-selection-list    Available IR list (default: TA{SERVICE_ABBV}SELUPOOL1,TA{SERVICE_ABBV}SELUPOOL2)
-    --force-ir-change      Force IR change on existing ADFs (true/false, default: false)
-    --auto-select-ir       Auto-select available IR (true/false, default: true)
 
 EOF
 }
@@ -61,15 +58,10 @@ DIAG_RG=""
 DIAG_LAW=""
 ADF_SUFFIX="we-1"
 IR_ENABLE="true"
-IR_NAME=""
-IR_ADF=""
+IR_NAME="TADMSELUPOOL2"
+IR_ADF="adf-dm-ir-prd-we-2"
 IR_RG=""
 IR_SUB=""
-
-# New IR selection parameters
-IR_SELECTION_LIST=""
-FORCE_IR_CHANGE="false"
-AUTO_SELECT_IR="true"
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -154,18 +146,6 @@ while [[ $# -gt 0 ]]; do
             IR_SUB="$2"
             shift 2
             ;;
-        --ir-selection-list)
-            IR_SELECTION_LIST="$2"
-            shift 2
-            ;;
-        --force-ir-change)
-            FORCE_IR_CHANGE="$2"
-            shift 2
-            ;;
-        --auto-select-ir)
-            AUTO_SELECT_IR="$2"
-            shift 2
-            ;;
         -h|--help)
             show_usage
             exit 0
@@ -199,8 +179,6 @@ validate_boolean() {
 validate_boolean "dev_init" "$DEV_INIT"
 validate_boolean "deploy_to_prod" "$DEPLOY_TO_PROD"
 validate_boolean "ir_enable" "$IR_ENABLE"
-validate_boolean "force_ir_change" "$FORCE_IR_CHANGE"
-validate_boolean "auto_select_ir" "$AUTO_SELECT_IR"
 
 # Set default values for advanced options if not provided
 [[ -z "$KEY_VAULT_PREFIX" ]] && KEY_VAULT_PREFIX="kv-${SERVICE_ABBV}-${PROJECT_ABBV}"
@@ -214,9 +192,6 @@ validate_boolean "auto_select_ir" "$AUTO_SELECT_IR"
 [[ -z "$IR_RG" ]] && IR_RG="rg-${SERVICE_ABBV}-adf-ir-prd-we-1"
 [[ -z "$IR_SUB" ]] && IR_SUB="tp-${SERVICE_ABBV}-adf-ir-prd"
 
-# Set default values for IR selection if not provided
-[[ -z "$IR_SELECTION_LIST" ]] && IR_SELECTION_LIST="${IR_NAME},TA$(echo ${SERVICE_ABBV} | tr '[:lower:]' '[:upper:]')SELUPOOL2,TA$(echo ${SERVICE_ABBV} | tr '[:lower:]' '[:upper:]')SELUPOOL3"
-
 # Function to generate the YAML content
 generate_pipeline_yaml() {
     cat << EOF
@@ -226,7 +201,7 @@ resources:
     - repository: templates
       type: git
       name: Platform and Process/facade-template-tf-module-adf_pnp
-      ref: refs/heads/main-new
+      ref: refs/heads/main
 variables:
   - group: vmss_group
 extends:
@@ -255,11 +230,6 @@ extends:
       ir_adf: "${IR_ADF}" # integration runtime adf name, defaults this value
       ir_rg: "${IR_RG}" # integration runtime adf resource group name, defaults this value
       ir_sub: "${IR_SUB}" # integration runtime adf subscription name, defaults this value
-      # IR Selection Parameters - NEW
-      ir_selection_list: "${IR_SELECTION_LIST}" # comma-separated list of available IRs
-      force_ir_change: ${FORCE_IR_CHANGE} # force IR change on existing ADFs
-      auto_select_ir: ${AUTO_SELECT_IR} # enable automatic IR selection
-      
 EOF
 }
 
@@ -291,30 +261,8 @@ echo "- Resource Group Prefix: $RG_PREFIX"
 echo "- Subscription Prefix: $SUB_PREFIX"
 echo "- Integration Runtime Name: $IR_NAME"
 echo "- Integration Runtime Enabled: $IR_ENABLE"
-echo "- IR Selection List: $IR_SELECTION_LIST"
-echo "- Force IR Change: $FORCE_IR_CHANGE"
-echo "- Auto Select IR: $AUTO_SELECT_IR"
 echo ""
 echo "You can now commit this file to your repository and use it in Azure DevOps."
-
-# Display test examples
-echo ""
-echo "TESTING EXAMPLES:"
-echo ""
-echo "1. Safe mode (existing ADFs unchanged):"
-echo "   ./$(basename "$0") -r \"test-repo\" -p \"tst\" -s \"dm\" -d true"
-echo ""
-echo "2. Multiple IRs available:"
-echo "   ./$(basename "$0") -r \"test-repo\" -p \"tst\" -s \"dm\" -d true \\"
-echo "     --ir-selection-list \"TADMSELUPOOL1,TADMSELUPOOL2,TADMSELUPOOL3\""
-echo ""
-echo "3. Force IR migration:"
-echo "   ./$(basename "$0") -r \"test-repo\" -p \"tst\" -s \"dm\" -d false \\"
-echo "     --force-ir-change true --ir-selection-list \"TADMSELUPOOL2,TADMSELUPOOL3\""
-echo ""
-echo "4. Manual IR selection:"
-echo "   ./$(basename "$0") -r \"test-repo\" -p \"tst\" -s \"dm\" -d false \\"
-echo "     --auto-select-ir false --ir-name \"TADMSELUPOOL2\""
 
 # Make the script executable
 chmod +x "$0" 2>/dev/null || true
