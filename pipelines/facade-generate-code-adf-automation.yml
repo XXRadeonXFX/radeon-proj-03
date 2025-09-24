@@ -347,7 +347,7 @@ stages:
           inputs:
             targetType: 'filePath'
             filePath: './pnp-pipelines-automation/scripts/adf-pipelines/adf_ir_capacity_checker.sh'
-            workingDirectory: '$(Build.SourcesDirectory)'
+            working_dir:     '$(Build.SourcesDirectory)/${{ parameters.repository_name }}'
           env:
             ADF_RESOURCE_GROUP: 'rg-dm-adf-ir-prd-we-1'
             IR_MAX_CAPACITY: '100'
@@ -371,7 +371,7 @@ stages:
     - WaitForApproval
     - DeployRepo
     - ONPremIRCheck    
-  condition: or(eq(dependencies.CheckRepoExistence.outputs['CheckRepo.checkRepoStep.repoExists'], 'true'), and(eq(dependencies.CheckRepoExistence.outputs['CheckRepo.checkRepoStep.repoExists'], 'false'), eq(dependencies.DeployRepo.result, 'Succeeded')))
+  condition: and(eq(dependencies.ONPremIRCheck.result, 'Succeeded'), or(eq(dependencies.CheckRepoExistence.outputs['CheckRepo.checkRepoStep.repoExists'], 'true'), and(eq(dependencies.CheckRepoExistence.outputs['CheckRepo.checkRepoStep.repoExists'], 'false'), eq(dependencies.DeployRepo.result, 'Succeeded'))))
   variables:
     SELECTED_ADF: $[ dependencies.ONPremIRCheck.outputs['POOLcapacityCHECK.SetJobOutputs.SELECTED_ADF'] ]
     SELECTED_IR: $[ dependencies.ONPremIRCheck.outputs['POOLcapacityCHECK.SetJobOutputs.SELECTED_IR'] ]
@@ -417,7 +417,7 @@ stages:
     - DeployRepo
     - ONPremIRCheck    
     - DeployADFpublish
-  condition: or(eq(dependencies.CheckRepoExistence.outputs['CheckRepo.checkRepoStep.repoExists'], 'true'), and(eq(dependencies.CheckRepoExistence.outputs['CheckRepo.checkRepoStep.repoExists'], 'false'), and(eq(dependencies.DeployRepo.result, 'Succeeded'), eq(dependencies.DeployADFpublish.result, 'Succeeded'))))
+  condition: and(eq(dependencies.ONPremIRCheck.result, 'Succeeded'), or(eq(dependencies.CheckRepoExistence.outputs['CheckRepo.checkRepoStep.repoExists'], 'true'), and(eq(dependencies.CheckRepoExistence.outputs['CheckRepo.checkRepoStep.repoExists'], 'false'), and(eq(dependencies.DeployRepo.result, 'Succeeded'), eq(dependencies.DeployADFpublish.result, 'Succeeded')))))
   variables:
     SELECTED_ADF: $[ dependencies.ONPremIRCheck.outputs['POOLcapacityCHECK.SetJobOutputs.SELECTED_ADF'] ]
     SELECTED_IR: $[ dependencies.ONPremIRCheck.outputs['POOLcapacityCHECK.SetJobOutputs.SELECTED_IR'] ]
