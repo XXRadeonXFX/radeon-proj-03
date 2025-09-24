@@ -329,7 +329,7 @@ stages:
             AZURE_DEVOPS_EXT_PAT: $(PAT)
             GIT_TERMINAL_PROMPT: 0
 ######################################################{ IR CHECKER }#####################################
--stage: ONPremIRCheck
+- stage: ONPremIRCheck
   displayName: 'IR CHECK'
   dependsOn: 
     - CheckRepoExistence
@@ -339,6 +339,7 @@ stages:
   condition: or(eq(dependencies.CheckRepoExistence.outputs['CheckRepo.checkRepoStep.repoExists'], 'true'), and(eq(dependencies.CheckRepoExistence.outputs['CheckRepo.checkRepoStep.repoExists'], 'false'), eq(dependencies.DeployRepo.result, 'Succeeded')))
   jobs:
     - job: POOLcapacityCHECK
+      displayName: 'Pool Capacity Check'
     steps:
     - task: Bash@3
       name: CheckIRCapacity
@@ -403,8 +404,8 @@ stages:
           vnet_resource_group_prefix: ${{ parameters.vnet_resource_group_prefix }}
           vnet_prefix:                ${{ parameters.vnet_prefix }}
           deployment_pipeline_yml:    ${{ parameters.deployment_pipeline_yml }}              
-          ir_name:       '$(SELECTED_ADF)'
-          ir_adf:        '$(SELECTED_IR)'
+          ir_name:       '$(SELECTED_IR)'
+          ir_adf:        '$(SELECTED_ADF)'
           working_dir:     '$(Build.SourcesDirectory)/${{ parameters.repository_name }}'
 
 - stage: DeployADFmain
@@ -449,6 +450,6 @@ stages:
           vnet_resource_group_prefix: ${{ parameters.vnet_resource_group_prefix }}
           vnet_prefix:                ${{ parameters.vnet_prefix }}
           deployment_pipeline_yml:    ${{ parameters.deployment_pipeline_yml }}                        
-          ir_name:       '$(SELECTED_ADF)'
-          ir_adf:        '$(SELECTED_IR)'
+          ir_name:       '$(SELECTED_IR)'
+          ir_adf:        '$(SELECTED_ADF)'
           working_dir:     '$(Build.SourcesDirectory)/${{ parameters.repository_name }}'
