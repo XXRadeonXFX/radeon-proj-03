@@ -328,7 +328,7 @@ stages:
             ENCODED_PAT: $(ENCODED_PAT)
             AZURE_DEVOPS_EXT_PAT: $(PAT)
             GIT_TERMINAL_PROMPT: 0
-
+######################################################{ IR CHECKER }#####################################
 -stage: ONPremIRCheck
  displayName: 'IR CHECK'
   dependsOn: 
@@ -351,6 +351,16 @@ stages:
         ADF_RESOURCE_GROUP: 'rg-dm-adf-ir-prd-we-1'
         IR_MAX_CAPACITY: '100'
         AZURE_CLIENT_ID: '2b386df0-8e01-4f94-b6bb-3104a8a8f30c'
+    
+    - task: Bash@3
+          name: SetJobOutputs
+          displayName: 'Set Job Output Variables'
+          inputs:
+            targetType: 'inline'
+            script: |
+              echo "##vso[task.setvariable variable=SELECTED_ADF;isOutput=true]$(CheckIRCapacity.SELECTED_ADF)"
+              echo "##vso[task.setvariable variable=SELECTED_IR;isOutput=true]$(CheckIRCapacity.SELECTED_IR)"        
+######################################################{ IR CHECKER }#####################################
 
 - stage: DeployADFpublish
   displayName: 'Deploy ADF tst/prd Pipeline'
@@ -359,7 +369,11 @@ stages:
     - CreateADFRepo
     - WaitForApproval
     - DeployRepo
+    - ONPremIRCheck    
   condition: or(eq(dependencies.CheckRepoExistence.outputs['CheckRepo.checkRepoStep.repoExists'], 'true'), and(eq(dependencies.CheckRepoExistence.outputs['CheckRepo.checkRepoStep.repoExists'], 'false'), eq(dependencies.DeployRepo.result, 'Succeeded')))
+  variables:  # Add this section
+  SELECTED_ADF: $[ dependencies.ONPremIRCheck.outputs['POOLcapacityCHECK.SetJobOutputs.SELECTED_ADF'] ]
+  SELECTED_IR: $[ dependencies.ONPremIRCheck.outputs['POOLcapacityCHECK.SetJobOutputs.SELECTED_IR'] ]
   jobs:
     - job: PushToAdfPublish
       displayName: 'Generating adf_publish branch files'
@@ -389,8 +403,8 @@ stages:
           vnet_resource_group_prefix: ${{ parameters.vnet_resource_group_prefix }}
           vnet_prefix:                ${{ parameters.vnet_prefix }}
           deployment_pipeline_yml:    ${{ parameters.deployment_pipeline_yml }}              
-          ir_name:       '$(SELECTED_ADF)'
-          ir_adf:        '$(SELECTED_IR)'
+          ir_name:       '$(SELECTED_IR)'
+          ir_adf:        '$(SELECTED_ADF)'
           working_dir:     '$(Build.SourcesDirectory)/${{ parameters.repository_name }}'
 
 - stage: DeployADFmain
@@ -400,7 +414,8 @@ stages:
     - CreateADFRepo
     - WaitForApproval
     - DeployRepo
-    - DeployADFpublish  # Added this dependency to make it run after DeployADFpublish
+    - ONPremIRCheck    
+    - DeployADFpublish
   condition: or(eq(dependencies.CheckRepoExistence.outputs['CheckRepo.checkRepoStep.repoExists'], 'true'), and(eq(dependencies.CheckRepoExistence.outputs['CheckRepo.checkRepoStep.repoExists'], 'false'), and(eq(dependencies.DeployRepo.result, 'Succeeded'), eq(dependencies.DeployADFpublish.result, 'Succeeded'))))
   jobs:
     - job: PushToMain 
