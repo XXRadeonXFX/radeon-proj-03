@@ -20,6 +20,10 @@ steps:
       --sub-prefix         "${{ parameters.subscription_prefix }}"
       --vnet-rg-prefix     "${{ parameters.vnet_resource_group_prefix }}"
       --vnet-prefix        "${{ parameters.vnet_prefix }}"
+      --ir-name            "${{ parameters.ir_name }}"
+      --ir-adf             "${{ parameters.ir_adf }}"
+      --ir-rg              "rg-dm-adf-ir-prd-we-1"
+      --ir-sub             "tp-dm-adf-ir-prd"
     workingDirectory: '${{ parameters.working_dir }}'
 ##################################| GENERATING ci/pipeline.yml FILE |################################## 
 
@@ -36,6 +40,8 @@ steps:
       -o "${{ parameters.working_dir }}"
     workingDirectory: '${{ parameters.working_dir }}'
 ##################################| GENERATING managedVirtualNetwork-json.sh & default.json FILE |################################## 
+
+
 
 ##################################| GENERATING publish-config.json FILE |##################################
 - task: Bash@3
