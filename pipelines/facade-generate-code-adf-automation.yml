@@ -330,7 +330,7 @@ stages:
             GIT_TERMINAL_PROMPT: 0
 ######################################################{ IR CHECKER }#####################################
 -stage: ONPremIRCheck
- displayName: 'IR CHECK'
+  displayName: 'IR CHECK'
   dependsOn: 
     - CheckRepoExistence
     - CreateADFRepo
@@ -338,7 +338,7 @@ stages:
     - DeployRepo
   condition: or(eq(dependencies.CheckRepoExistence.outputs['CheckRepo.checkRepoStep.repoExists'], 'true'), and(eq(dependencies.CheckRepoExistence.outputs['CheckRepo.checkRepoStep.repoExists'], 'false'), eq(dependencies.DeployRepo.result, 'Succeeded')))
   jobs:
-    -job: POOLcapacityCHECK
+    - job: POOLcapacityCHECK
     steps:
     - task: Bash@3
       name: CheckIRCapacity
@@ -353,13 +353,13 @@ stages:
         AZURE_CLIENT_ID: '2b386df0-8e01-4f94-b6bb-3104a8a8f30c'
     
     - task: Bash@3
-          name: SetJobOutputs
-          displayName: 'Set Job Output Variables'
-          inputs:
-            targetType: 'inline'
-            script: |
-              echo "##vso[task.setvariable variable=SELECTED_ADF;isOutput=true]$(CheckIRCapacity.SELECTED_ADF)"
-              echo "##vso[task.setvariable variable=SELECTED_IR;isOutput=true]$(CheckIRCapacity.SELECTED_IR)"        
+      name: SetJobOutputs
+      displayName: 'Set Job Output Variables'
+      inputs:
+        targetType: 'inline'
+        script: |
+          echo "##vso[task.setvariable variable=SELECTED_ADF;isOutput=true]$(CheckIRCapacity.SELECTED_ADF)"
+          echo "##vso[task.setvariable variable=SELECTED_IR;isOutput=true]$(CheckIRCapacity.SELECTED_IR)"        
 ######################################################{ IR CHECKER }#####################################
 
 - stage: DeployADFpublish
@@ -371,9 +371,9 @@ stages:
     - DeployRepo
     - ONPremIRCheck    
   condition: or(eq(dependencies.CheckRepoExistence.outputs['CheckRepo.checkRepoStep.repoExists'], 'true'), and(eq(dependencies.CheckRepoExistence.outputs['CheckRepo.checkRepoStep.repoExists'], 'false'), eq(dependencies.DeployRepo.result, 'Succeeded')))
-  variables:  # Add this section
-  SELECTED_ADF: $[ dependencies.ONPremIRCheck.outputs['POOLcapacityCHECK.SetJobOutputs.SELECTED_ADF'] ]
-  SELECTED_IR: $[ dependencies.ONPremIRCheck.outputs['POOLcapacityCHECK.SetJobOutputs.SELECTED_IR'] ]
+  variables:
+    SELECTED_ADF: $[ dependencies.ONPremIRCheck.outputs['POOLcapacityCHECK.SetJobOutputs.SELECTED_ADF'] ]
+    SELECTED_IR: $[ dependencies.ONPremIRCheck.outputs['POOLcapacityCHECK.SetJobOutputs.SELECTED_IR'] ]
   jobs:
     - job: PushToAdfPublish
       displayName: 'Generating adf_publish branch files'
@@ -403,8 +403,8 @@ stages:
           vnet_resource_group_prefix: ${{ parameters.vnet_resource_group_prefix }}
           vnet_prefix:                ${{ parameters.vnet_prefix }}
           deployment_pipeline_yml:    ${{ parameters.deployment_pipeline_yml }}              
-          ir_name:       '$(SELECTED_IR)'
-          ir_adf:        '$(SELECTED_ADF)'
+          ir_name:       '$(SELECTED_ADF)'
+          ir_adf:        '$(SELECTED_IR)'
           working_dir:     '$(Build.SourcesDirectory)/${{ parameters.repository_name }}'
 
 - stage: DeployADFmain
@@ -417,6 +417,9 @@ stages:
     - ONPremIRCheck    
     - DeployADFpublish
   condition: or(eq(dependencies.CheckRepoExistence.outputs['CheckRepo.checkRepoStep.repoExists'], 'true'), and(eq(dependencies.CheckRepoExistence.outputs['CheckRepo.checkRepoStep.repoExists'], 'false'), and(eq(dependencies.DeployRepo.result, 'Succeeded'), eq(dependencies.DeployADFpublish.result, 'Succeeded'))))
+  variables:
+    SELECTED_ADF: $[ dependencies.ONPremIRCheck.outputs['POOLcapacityCHECK.SetJobOutputs.SELECTED_ADF'] ]
+    SELECTED_IR: $[ dependencies.ONPremIRCheck.outputs['POOLcapacityCHECK.SetJobOutputs.SELECTED_IR'] ]
   jobs:
     - job: PushToMain 
       displayName: 'Generating all ADF deployment config Files'
