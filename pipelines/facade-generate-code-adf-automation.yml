@@ -362,8 +362,13 @@ stages:
         inputs:
           targetType: 'inline'
           script: |
+            echo "=== IR CAPACITY RESULTS ==="
+            echo "SELECTED_ADF: $(CheckIRCapacity.SELECTED_ADF)"
+            echo "SELECTED_IR: $(CheckIRCapacity.SELECTED_IR)"
+            echo "============================"
+            
             echo "##vso[task.setvariable variable=SELECTED_ADF;isOutput=true]$(CheckIRCapacity.SELECTED_ADF)"
-            echo "##vso[task.setvariable variable=SELECTED_IR;isOutput=true]$(CheckIRCapacity.SELECTED_IR)"        
+            echo "##vso[task.setvariable variable=SELECTED_IR;isOutput=true]$(CheckIRCapacity.SELECTED_IR)"######################################################{ IR CHECKER }#####################################
 ######################################################{ IR CHECKER }#####################################
 
 - stage: DeployADFpublish
