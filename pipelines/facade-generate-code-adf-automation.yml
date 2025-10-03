@@ -7,17 +7,13 @@ resources:
     - repository: pnp-pipelines-automation
       type: git
       name: pnp-pipelines-automation
-      ref: refs/heads/ard-ADF
+      ref: refs/heads/main
 
     - repository: pnp-deploy-repo-automation
       type: git
       name: pnp-deploy-repo-automation
       ref: ${{ format('refs/heads/{0}', parameters.deploy_repo_branch) }}
 
-    - repository: facade-template-tf-module-adf_pnp
-      type: git
-      name: facade-template-tf-module-adf_pnp
-      ref: refs/heads/automation
 
 pool:
   name: vmss-dm-pp-prd-we-1
@@ -25,7 +21,6 @@ pool:
 parameters:
   - name: repository_name
     type: string
-    default: '9p9p9p-automation-poc-adf-dm-pp-dev'
 
   - name: project_name
     type: string
@@ -33,7 +28,6 @@ parameters:
     
   - name: project_abbv
     type: string
-    default: 'poc-x1'
     
   - name: deploy_repo_branch
     type: string
@@ -64,7 +58,6 @@ parameters:
 
   - name: deploy_pipeline_name
     type: string
-    default: '9p9p9p-automation-poc-adf-dm-pp-dev"'    
 
   - name: enable_deployment_trigger
     type: boolean
@@ -84,7 +77,6 @@ parameters:
 
   - name: factory_name
     type: string
-    default: 'adf-dm-poc-x1-dev-we-1'
 
   - name: subscription_prefix
     type: string
@@ -218,13 +210,13 @@ stages:
           arguments: '${{ parameters.repository_name }} ${{ parameters.project_name }}'
           workingDirectory: '$(Build.SourcesDirectory)/pnp-deploy-repo-automation'
 
-      # - script: |
-      #     python3 ./pnp-pipelines-automation/scripts/common/create-pull-request.py \
-      #       --repository_id "pnp-deploy-repo-automation" \
-      #       --source_branch "${{ parameters.repository_name }}"
-      #   displayName: "Create Pull Request"
-      #   env:
-      #     ENCODED_PAT: $(ENCODED_PAT)
+      - script: |
+          python3 ./pnp-pipelines-automation/scripts/common/create-pull-request.py \
+            --repository_id "pnp-deploy-repo-automation" \
+            --source_branch "${{ parameters.repository_name }}"
+        displayName: "Create Pull Request"
+        env:
+          ENCODED_PAT: $(ENCODED_PAT)
 ######################################################{ GENERATE REPO TERRAFORM }######################################################
 
 
